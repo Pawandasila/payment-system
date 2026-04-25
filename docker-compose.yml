@@ -64,7 +64,7 @@ services:
       - redis
 
   frontend:
-    image: node:22-alpine
+    image: node:20-alpine
     working_dir: /app
     command: sh -c "npm install && npm run dev"
     environment:

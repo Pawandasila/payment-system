@@ -4,7 +4,6 @@ import random
 from datetime import timedelta
 
 from django.db import IntegrityError, transaction
-from django.db.models import F
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
@@ -159,8 +158,9 @@ def process_one_payout(payout_id=None):
         if payout.status == Payout.Status.PENDING:
             transition_payout(payout, Payout.Status.PROCESSING)
 
-        payout.attempts = F("attempts") + 1
-        payout.next_attempt_at = now + timedelta(seconds=2**payout.attempts)
+        next_attempt = int(payout.attempts) + 1
+        payout.attempts = next_attempt
+        payout.next_attempt_at = now + timedelta(seconds=2**next_attempt)
         payout.save(update_fields=["attempts", "next_attempt_at", "updated_at"])
         payout.refresh_from_db()
 
