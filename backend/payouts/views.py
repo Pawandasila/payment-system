@@ -1,5 +1,7 @@
 import uuid
+import os
 
+from django.core.management import call_command
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
@@ -89,3 +91,32 @@ class CleanupIdempotencyKeysView(APIView):
     def post(self, request):
         deleted, _ = IdempotencyKey.objects.filter(expires_at__lt=timezone.now()).delete()
         return Response({"deleted": deleted}, status=status.HTTP_200_OK)
+
+
+class BootstrapSetupView(APIView):
+    def post(self, request):
+        expected_token = os.getenv("BOOTSTRAP_TOKEN", "").strip()
+        provided_token = request.headers.get("X-Bootstrap-Token", "").strip()
+
+        if not expected_token:
+            return Response(
+                {"detail": "Bootstrap endpoint is disabled. Set BOOTSTRAP_TOKEN."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        if provided_token != expected_token:
+            return Response({"detail": "Invalid bootstrap token."}, status=status.HTTP_403_FORBIDDEN)
+
+        call_command("migrate", interactive=False, verbosity=0)
+
+        if request.query_params.get("seed", "1") != "0":
+            call_command("seed_demo", verbosity=0)
+
+        return Response(
+            {
+                "ok": True,
+                "migrated": True,
+                "seeded": request.query_params.get("seed", "1") != "0",
+            },
+            status=status.HTTP_200_OK,
+        )
