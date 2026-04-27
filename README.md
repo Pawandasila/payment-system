@@ -11,20 +11,53 @@ The system models merchant balances as an immutable ledger in paise, accepts ide
 - Worker: Celery with Redis
 - Frontend: React, Vite, Tailwind
 
-## Run Locally
+## Run Locally (No Docker)
+
+Prerequisites:
+
+- Python 3.11+
+- Node 20+
+- PostgreSQL
+- Redis
+
+### 1) Start backend
 
 ```bash
-docker compose up --build
+cd backend
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
 ```
 
-In another terminal:
+Set environment variables (PowerShell example):
+
+```powershell
+$env:POSTGRES_DB="playto"
+$env:POSTGRES_USER="postgres"
+$env:POSTGRES_PASSWORD="postgres"
+$env:POSTGRES_HOST="localhost"
+$env:POSTGRES_PORT="5432"
+$env:CELERY_BROKER_URL="redis://localhost:6379/0"
+$env:CELERY_RESULT_BACKEND="redis://localhost:6379/1"
+$env:CORS_ALLOWED_ORIGINS="http://localhost:5173,http://127.0.0.1:5173"
+```
+
+Run migrations, seed data, and start API:
 
 ```bash
-docker compose exec api python manage.py migrate
-docker compose exec api python manage.py seed_demo
+python manage.py migrate
+python manage.py seed_demo
+gunicorn config.wsgi:application --bind 0.0.0.0:8000
 ```
 
-The compose file also starts the frontend at `http://localhost:5173`. If you prefer running it outside Docker:
+In separate terminals from `backend/`, start worker and beat:
+
+```bash
+celery -A config.celery worker -l info
+celery -A config.celery beat -l info
+```
+
+### 2) Start frontend
 
 ```bash
 cd frontend
@@ -33,6 +66,41 @@ npm run dev
 ```
 
 Open `http://localhost:5173`.
+
+## Deploy Without Docker (Render)
+
+You can deploy this project directly on Render using `render.yaml` in the repo root.
+
+Important: Render free tier does not include background workers. This project needs Celery worker and beat for payout processing, so full Render deployment requires paid worker instances.
+
+### Services created from `render.yaml`
+
+- `playto-api` (Python web service)
+- `playto-worker` (Celery worker, starter plan)
+- `playto-beat` (Celery beat, starter plan)
+- `playto-frontend` (static site)
+- `playto-postgres` (managed PostgreSQL)
+- `playto-redis` (managed Redis)
+
+### One-time steps
+
+1. Push this repo to GitHub.
+2. In Render, create a Blueprint deployment and select this repo.
+3. During setup, set these prompted env vars:
+  - `CORS_ALLOWED_ORIGINS` as your frontend Render URL
+  - `VITE_API_URL` as your backend API URL ending with `/api/v1`
+4. After first deploy, run in Render Shell for `playto-api`:
+
+```bash
+python manage.py migrate
+python manage.py seed_demo
+```
+
+5. Open the frontend Render URL.
+
+## Fully Free Deployment Path
+
+If you must stay fully free for all services (API + worker + beat + Postgres + Redis), use a single free VM provider and run all processes there (for example, Oracle Cloud Always Free). This project already supports that setup without Docker by running gunicorn, celery worker, and celery beat as separate processes.
 
 ## API
 
@@ -64,7 +132,8 @@ curl -X POST http://localhost:8000/api/v1/payouts \
 ## Tests
 
 ```bash
-docker compose exec api python manage.py test payouts
+cd backend
+python manage.py test payouts
 ```
 
 The important tests are:
